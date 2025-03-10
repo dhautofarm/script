@@ -1,0 +1,169 @@
+local TweenService = game:GetService("TweenService")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+local dropFolder = workspace:WaitForChild("Ignored"):WaitForChild("Drop")
+local cashiersFolder = workspace:WaitForChild("Cashiers")
+local brokenATMs = {} -- Tracks broken ATMs
+local atmBlacklist = {} -- Tracks ATMs that timed out (no cash collected)
+local currentATM = nil -- Tracks the ATM we are currently attacking
+local lootCollecting = false -- Prevent duplicate loot collection attempts
+local attackCooldowns = {} -- Stores cooldowns for ATMs
+local farmingPaused = false -- Pauses autofarming when the player dies
+
+-- Error Handling
+if not dropFolder or not cashiersFolder then
+    warn("Required folders not found!")
+    return
+end
+
+-- Detect player respawn and resume autofarming
+local function onCharacterAdded(newCharacter)
+    character = newCharacter
+    hrp = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:FindFirstChildOfClass("Humanoid")
+    farmingPaused = false
+end
+
+player.CharacterAdded:Connect(onCharacterAdded)
+
+-- Function to delete all seats in the game
+local function deleteAllSeats()
+    for _, seat in ipairs(workspace:GetDescendants()) do
+        if seat:IsA("Seat") or seat:IsA("VehicleSeat") then
+            seat:Destroy()
+        end
+    end
+end
+
+-- Function to equip combat tool
+local function equipCombatTool()
+    local combatTool = player.Backpack:FindFirstChild("Combat") or character:FindFirstChild("Combat")
+    if combatTool then
+        humanoid:EquipTool(combatTool)
+    end
+    return combatTool
+end
+
+-- Function to collect cash with advanced checks
+local function collectCash()
+    if lootCollecting then return false end
+    lootCollecting = true
+    local cashFound = false
+    local startTime = tick()
+    for _, cash in ipairs(dropFolder:GetChildren()) do
+        if cash:IsA("Part") and cash.Name == "MoneyDrop" and (cash.Position - hrp.Position).Magnitude < 25 then
+            local clickDetector = cash:FindFirstChildOfClass("ClickDetector")
+            if clickDetector and cash.Parent == dropFolder then
+                fireclickdetector(clickDetector)
+                cashFound = true
+                break
+            end
+        end
+    end
+    -- Wait for loot collection to complete or timeout
+    while cashFound and tick() - startTime < getgenv().AutofarmSettings.Timeout do
+        wait(0.1) -- Wait for 100ms to ensure cash is collected
+        lootCollecting = false
+        return true
+    end
+    lootCollecting = false
+    return false
+end
+
+-- Function to get the front position of an ATM
+local function getATMFrontPosition(atm)
+    for _, part in ipairs(atm:GetChildren()) do
+        if part:IsA("BasePart") then
+            return CFrame.new(part.Position + (part.CFrame.LookVector * -3), part.Position)
+        end
+    end
+    return nil
+end
+
+-- Function to move to a position with smooth tweening
+local function moveToPosition(position)
+    local tween = TweenService:Create(hrp, TweenInfo.new(2, Enum.EasingStyle.Linear), {CFrame = position})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- Function to attack an ATM with cooldown management
+local function attackATM(atm)
+    -- Skip ATM if blacklisted or on cooldown
+    if atmBlacklist[atm] or attackCooldowns[atm] and tick() - attackCooldowns[atm] < getgenv().AutofarmSettings.attackCooldown then
+        return
+    end
+
+    -- Equip the combat tool and move to ATM
+    local combatTool = equipCombatTool()
+    if not combatTool then return end
+
+    local atmPosition = getATMFrontPosition(atm)
+    if not atmPosition then return end
+
+    moveToPosition(atmPosition)
+    local startTime = tick()
+    local cashCollected = false
+
+    -- Keep attacking until ATM is destroyed or timeout
+    while atm:FindFirstChildOfClass("Humanoid") and atm.Humanoid.Health > 0 do
+        if farmingPaused then return end -- Stop attacking if the player is dead
+        
+        combatTool:Activate()
+        wait(0.1)
+
+        -- Collect cash if found
+        if collectCash() then
+            cashCollected = true
+            startTime = tick() -- Reset the timer if cash is collected
+        end
+
+        -- Timeout if no cash is collected within the timeout period
+        if tick() - startTime > getgenv().AutofarmSettings.Timeout then
+            atmBlacklist[atm] = true -- Add ATM to blacklist
+            return
+        end
+    end
+
+    -- Apply cooldown after attacking
+    attackCooldowns[atm] = tick()
+    
+    -- Collect remaining cash
+    startTime = tick()
+    repeat
+        wait(0.2)
+    until not collectCash() or tick() - startTime > 20
+end
+
+-- Main loop
+while true do
+    if humanoid and humanoid.Health <= 0 then
+        farmingPaused = true
+        repeat wait(1) until humanoid and humanoid.Health > 0
+    end
+    
+    -- Delete all seats before continuing the farming loop
+    deleteAllSeats()
+
+    local atmFound = false
+
+    -- Check for ATMs that are not broken or blacklisted
+    for _, atm in ipairs(cashiersFolder:GetChildren()) do
+        if atm:IsA("Model") and not brokenATMs[atm] and not atmBlacklist[atm] then
+            local humanoidTarget = atm:FindFirstChildOfClass("Humanoid")
+            if humanoidTarget and humanoidTarget.Health > 0 then
+                attackATM(atm)
+                atmFound = true
+                break
+            end
+        end
+    end
+
+    if not atmFound then
+        print("No active ATMs found. Checking again...")
+    end
+
+    wait(0.1)
+end
