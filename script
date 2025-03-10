@@ -1,12 +1,3 @@
--- CONFIGURATION (Outside the loadstring)
-getgenv().AutofarmSettings = {
-    lootCollectTimeout = 15,   -- Timeout for money collection attempts
-    attackCooldown = 2,        -- Cooldown between attacking the same ATM
-    moveSpeed = 16,            -- Speed for moving to new positions
-}
-
--- SCRIPT LOGIC
-
 local TweenService = game:GetService("TweenService")
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
