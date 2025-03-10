@@ -1,3 +1,12 @@
+-- CONFIGURATION (Outside the loadstring)
+getgenv().AutofarmSettings = {
+    lootCollectTimeout = 15,   -- Timeout for money collection attempts
+    attackCooldown = 2,        -- Cooldown between attacking the same ATM
+    moveSpeed = 16,            -- Speed for moving to new positions
+}
+
+-- SCRIPT LOGIC
+
 local TweenService = game:GetService("TweenService")
 local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -63,7 +72,7 @@ local function collectCash()
         end
     end
     -- Wait for loot collection to complete or timeout
-    while cashFound and tick() - startTime < getgenv().AutofarmSettings.Timeout do
+    while cashFound and tick() - startTime < getgenv().AutofarmSettings.lootCollectTimeout do
         wait(0.1) -- Wait for 100ms to ensure cash is collected
         lootCollecting = false
         return true
@@ -121,7 +130,7 @@ local function attackATM(atm)
         end
 
         -- Timeout if no cash is collected within the timeout period
-        if tick() - startTime > getgenv().AutofarmSettings.Timeout then
+        if tick() - startTime > getgenv().AutofarmSettings.lootCollectTimeout then
             atmBlacklist[atm] = true -- Add ATM to blacklist
             return
         end
